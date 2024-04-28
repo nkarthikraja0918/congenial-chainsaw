@@ -1,22 +1,53 @@
-name: WORKFLOW BY ANON_GHOST
-
-on:
-  workflow_dispatch:
+name: Setup and Use SSH VPS
 
 jobs:
-  build:
-    name: Start Building...
-    runs-on: windows-latest
-    timeout-minutes: 9999
-    
+  setup-and-use-vps:
+    runs-on: ubuntu-latest
     steps:
-      - name: Downloading & Installing Essentials
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Generate SSH key pair
+        run: ssh-keygen -t rsa -b 4096 -N "" -f id_rsa
+
+      - name: Install SSH server
         run: |
-          Invoke-WebRequest -Uri "https://gitlab.com/chamod12/iperius_win-10_github_rdp/-/raw/main/down.bat" -OutFile "Downloads.bat"
-          cmd /c Downloads.bat
+          sudo apt update
+          sudo apt install -y openssh-server
 
-      - name: Connect to LiteManager
-        run: cmd /c show.bat
+      - name: Configure SSH server
+        run: echo -e "\nPermitRootLogin yes\nPasswordAuthentication yes\n" | sudo tee -a /etc/ssh/sshd_config && sudo systemctl restart ssh
 
-      - name: Time Counter
-        run: cmd /c loop.bat
+      - name: Create admin user
+        run: |
+          sudo useradd -m -p $(openssl passwd -1 admin) admin
+          sudo usermod -aG sudo admin
+
+      - name: Enable IP forwarding
+        run: |
+          echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
+          sudo sysctl -p
+
+      - name: Install curl
+        run: sudo apt install -y curl
+
+      - name: Get public IP
+        id: get-ip
+        run: echo "::set-output name=public_ip::$(curl -s https://api.ipify.org)"
+
+      - name: Print connection details
+        run: |
+          echo "SSH VPS is ready! Connection details:"
+          echo "IP: ${{ steps.get-ip.outputs.public_ip }}"
+          echo "Username: admin"
+          echo "Password: admin"
+
+      - name: Use VPS
+        run: ssh admin@${{ steps.get-ip.outputs.public_ip }} -p 22 # Adjust port if necessary
+
+  keep-alive:
+    runs-on: ubuntu-latest
+    needs: setup-and-use-vps
+    steps:
+      - name: Keep workspace alive
+        run: sleep infinity
